@@ -1,0 +1,12 @@
+{
+  "color": [
+    { "name": "brand_primary", "value": "#1677FF" },
+    { "name": "accent_orange", "value": "#FF7D00" },
+    { "name": "accent_green", "value": "#00B42A" },
+    { "name": "bg_global", "value": "#F5F7FA" },
+    { "name": "text_primary", "value": "#1D2129" },
+    { "name": "text_secondary", "value": "#86909C" },
+    { "name": "border_light", "value": "#E5E6EB" },
+    { "name": "brand_primary_disabled", "value": "#C6E2FF" }
+  ]
+}

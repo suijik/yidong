@@ -1,0 +1,12 @@
+{
+  "float": [
+    { "name": "text_size_title_large", "value": "32.0fp" },
+    { "name": "text_size_title_medium", "value": "28.0fp" },
+    { "name": "text_size_body", "value": "26.0fp" },
+    { "name": "text_size_caption", "value": "24.0fp" },
+    { "name": "spacing_px", "value": "16.0vp" },
+    { "name": "spacing_md", "value": "24.0vp" },
+    { "name": "spacing_lg", "value": "20.0vp" },
+    { "name": "radius_md", "value": "8.0vp" }
+  ]
+}

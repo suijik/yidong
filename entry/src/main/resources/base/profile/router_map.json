@@ -1,0 +1,24 @@
+{
+  "routerMap": [
+    {
+      "name": "Start",
+      "pageSourceFile": "src/main/ets/pages/Start/Start.ets",
+      "buildFunction": "StartBuilder"
+    },
+    {
+      "name": "Guide",
+      "pageSourceFile": "src/main/ets/pages/Guide/Guide.ets",
+      "buildFunction": "GuideBuilder"
+    },
+    {
+      "name": "Login",
+      "pageSourceFile": "src/main/ets/pages/Login/Login.ets",
+      "buildFunction": "LoginBuilder"
+    },
+    {
+      "name": "Main",
+      "pageSourceFile": "src/main/ets/pages/main/main.ets",
+      "buildFunction": "MainBuilder"
+    }
+  ]
+}

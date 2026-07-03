@@ -1,0 +1,20 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+
+# 文档文件不上传
+*.md
+*.docx
+*.doc
+
+# 项目规范文件目录
+/inspect-results
