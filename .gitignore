@@ -16,5 +16,13 @@
 *.docx
 *.doc
 
+# 表格文件不上传
+*.xls
+*.xlsx
+*.csv
+
+# 其他非项目文件
+*.py
+
 # 项目规范文件目录
 /inspect-results

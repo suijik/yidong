@@ -104,4 +104,32 @@ export class PreferencesUtil {
       LogUtils.error(TAG, '清除记住密码失败', err);
     }
   }
+
+  /**
+   * 获取自定义键值
+   */
+  static async getCustom(context: Context, key: string): Promise<string | null> {
+    try {
+      const dataPreferences = await preferences.getPreferences(context, 'app_preferences');
+      const value = await dataPreferences.get(key, '');
+      return value as string || null;
+    } catch (err) {
+      LogUtils.error(TAG, '获取自定义键值失败', err);
+      return null;
+    }
+  }
+
+  /**
+   * 设置自定义键值
+   */
+  static async setCustom(context: Context, key: string, value: string): Promise<void> {
+    try {
+      const dataPreferences = await preferences.getPreferences(context, 'app_preferences');
+      await dataPreferences.put(key, value);
+      await dataPreferences.flush();
+      LogUtils.info(TAG, '自定义键值保存成功: ' + key);
+    } catch (err) {
+      LogUtils.error(TAG, '保存自定义键值失败', err);
+    }
+  }
 }

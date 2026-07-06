@@ -8,6 +8,7 @@ export struct CampusNewsDetail {
   navPathStack: NavPathStack = new NavPathStack();
   @StorageProp('topRectHeight') topRectHeight: number = 0;
   @StorageProp('bottomRectHeight') bottomRectHeight: number = 0;
+  @StorageProp('darkModeEnabled') darkModeEnabled: boolean = false;
   newsParam: Record<string, Object> = {};
 
   @State newsId: number = 0;
@@ -24,6 +25,10 @@ export struct CampusNewsDetail {
       this.newsSource = this.newsParam['source'] as string;
       this.newsPublishTime = this.newsParam['publishTime'] as string;
     }
+    const dm: Object | undefined = AppStorage.get('darkModeEnabled');
+    if (dm !== undefined) {
+      this.darkModeEnabled = dm as boolean;
+    }
   }
 
   build() {
@@ -33,6 +38,7 @@ export struct CampusNewsDetail {
         Column()
           .width('100%')
           .height(this.topRectHeight)
+          .backgroundColor(this.darkModeEnabled ? '#16162A' : '#F5F7FA')
 
         // 手动标题栏（仿系统隐藏 title 的返回按钮样式：圆圈 + < 箭头）
         Row() {
@@ -40,10 +46,10 @@ export struct CampusNewsDetail {
             Circle()
               .width(32)
               .height(32)
-              .fill($r('app.color.bg_global'))
+              .fill(this.darkModeEnabled ? '#1e1e3a' : $r('app.color.bg_global'))
             SymbolGlyph($r('sys.symbol.chevron_left'))
               .fontSize(18)
-              .fontColor([$r('app.color.text_primary')])
+              .fontColor([this.darkModeEnabled ? '#e0e0f0' : $r('app.color.text_primary')])
           }
           .onClick(() => {
             this.navPathStack.pop();
@@ -62,7 +68,7 @@ export struct CampusNewsDetail {
         Column()
           .width('100%')
           .height(1)
-          .backgroundColor($r('app.color.border_light'))
+          .backgroundColor(this.darkModeEnabled ? '#2a2a4a' : $r('app.color.border_light'))
 
         // 主内容区
         Column() {
@@ -71,7 +77,7 @@ export struct CampusNewsDetail {
               // 标题
               Text(this.newsTitle)
                 .fontSize($r('app.float.text_size_title_large'))
-                .fontColor($r('app.color.text_primary'))
+                .fontColor(this.darkModeEnabled ? '#e0e0f0' : $r('app.color.text_primary'))
                 .fontWeight(700)
                 .width('100%')
                 .margin({ top: $r('app.float.spacing_px') })
@@ -84,7 +90,7 @@ export struct CampusNewsDetail {
                 Blank()
                 Text(this.newsPublishTime)
                   .fontSize($r('app.float.text_size_caption'))
-                  .fontColor($r('app.color.text_secondary'))
+                  .fontColor(this.darkModeEnabled ? '#a0a0b8' : $r('app.color.text_secondary'))
               }
               .width('100%')
               .margin({ top: $r('app.float.spacing_px') })
@@ -93,13 +99,13 @@ export struct CampusNewsDetail {
               Column()
                 .width('100%')
                 .height(1)
-                .backgroundColor($r('app.color.border_light'))
+                .backgroundColor(this.darkModeEnabled ? '#2a2a4a' : $r('app.color.border_light'))
                 .margin({ top: $r('app.float.spacing_px'), bottom: $r('app.float.spacing_md') })
 
               // 正文
               Text(this.newsContent)
                 .fontSize($r('app.float.text_size_body'))
-                .fontColor($r('app.color.text_primary'))
+                .fontColor(this.darkModeEnabled ? '#e0e0f0' : $r('app.color.text_primary'))
                 .width('100%')
             }
             .width('100%')
@@ -112,7 +118,7 @@ export struct CampusNewsDetail {
           .width('100%')
         }
         .layoutWeight(1)
-        .backgroundColor($r('app.color.bg_global'))
+        .backgroundColor(this.darkModeEnabled ? '#1A1A2E' : $r('app.color.bg_global'))
 
         // 底部安全区域
         Column()

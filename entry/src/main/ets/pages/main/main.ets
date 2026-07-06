@@ -4,9 +4,16 @@ import { CourseItem } from '../../model/Course';
 import { WeatherData } from '../../model/Weather';
 import { QuickEntryItem } from '../../model/QuickEntry';
 import {
-  MOCK_ANNOUNCEMENTS, MOCK_TODAY_COURSES, MOCK_WEATHER, MOCK_QUICK_ENTRIES,
-  MOCK_CAMPUS_NEWS, getCoursesForWeek
+  MOCK_ANNOUNCEMENTS, MOCK_WEATHER, MOCK_QUICK_ENTRIES,
+  MOCK_CAMPUS_NEWS
 } from '../../data/MockData';
+import { CourseDataManager, CourseData } from '../../common/utils/CourseDataManager';
+import { CourseScheduleView } from '../CourseSchedule/CourseScheduleView';
+import { NotificationUtil } from '../../common/utils/NotificationUtil';
+import { PreferencesUtil } from '../../common/utils/PreferencesUtil';
+import { common } from '@kit.AbilityKit';
+
+const TAG = 'Main';
 
 interface NewsDetailParams {
   id: number;
@@ -31,7 +38,8 @@ export struct Main {
 
   // Mock data
   @State announcements: CampusNewsItem[] = MOCK_ANNOUNCEMENTS;
-  @State todayCourses: CourseItem[] = MOCK_TODAY_COURSES;
+  @State todayCourses: CourseItem[] = [];
+  @State allCourses: CourseData[] = [];
   @State weatherData: WeatherData = MOCK_WEATHER;
   @State quickEntries: QuickEntryItem[] = MOCK_QUICK_ENTRIES;
 
@@ -47,8 +55,8 @@ export struct Main {
   @State userNickname: string = '同学';
   @State userStudentId: string = '2024001001';
   @State userCollege: string = '计算机科学与技术学院';
-  @State darkModeEnabled: boolean = false;
-  @State fontSizeLevel: number = 1;
+  @StorageProp('darkModeEnabled') darkModeEnabled: boolean = false;
+  @StorageProp('fontSizeLevel') fontSizeLevel: number = 1;
 
   // Tab 2: Study assistant state
   @State activeStudyTab: number = 0;
@@ -65,6 +73,7 @@ export struct Main {
     '计算机组成与设计 - 戴维·帕特森',
     '软件工程：实践者的研究方法 - 罗杰·普莱斯曼'
   ];
+  @State libraryFavorites: string[] = [];
 
   // Card entrance animation
   @State cardOpacity1: number = 0;
@@ -73,12 +82,44 @@ export struct Main {
   @State cardOffsetY2: number = 20;
   @State cardOpacity3: number = 0;
   @State cardOffsetY3: number = 20;
+  @State coursesVersion: number = 0;
+  @StorageLink('courseRefreshVer') courseRefreshVer: number = 0;
 
   aboutToAppear(): void {
     // Fallback bottomRectHeight for previewer (gesture indicator + tab bar buffer)
     if (this.bottomRectHeight === 0) {
       AppStorage.setOrCreate('bottomRectHeight', 34);
     }
+
+    // Initialize dark mode and font size if not set
+    if (AppStorage.get('darkModeEnabled') === undefined) {
+      AppStorage.setOrCreate('darkModeEnabled', false);
+    }
+    if (AppStorage.get('fontSizeLevel') === undefined) {
+      AppStorage.setOrCreate('fontSizeLevel', 1);
+    }
+
+    // Load saved settings from Preferences
+    const context: common.Context = getContext(this);
+    PreferencesUtil.getCustom(context, 'darkModeEnabled').then((val: string | null) => {
+      if (val !== null) {
+        AppStorage.setOrCreate('darkModeEnabled', val === 'true');
+      }
+    });
+    PreferencesUtil.getCustom(context, 'fontSizeLevel').then((val: string | null) => {
+      if (val !== null) {
+        AppStorage.setOrCreate('fontSizeLevel', parseInt(val));
+      }
+    });
+
+    // Request notification permission on startup
+    NotificationUtil.requestPermission();
+
+    // Load courses from storage
+    this.loadAllCourses();
+
+    // Load library favorites
+    this.loadLibraryFavorites();
 
     // Staggered card entrance animations
     setTimeout(() => {
@@ -95,6 +136,94 @@ export struct Main {
     }, 500);
   }
 
+  onPageShow(): void {
+    this.loadAllCourses();
+    this.coursesVersion++;
+    this.loadLibraryFavorites();
+  }
+
+  private loadAllCourses(): void {
+    // 1. Try AppStorage first (fastest)
+    const appData: CourseData[] = CourseDataManager.loadFromAppStorage();
+    if (appData.length > 0) {
+      this.allCourses = appData;
+      this.updateTodayCourses(appData);
+      return;
+    }
+    // 2. Fallback: async from Preferences, sync to AppStorage
+    const context: common.Context = getContext(this);
+    CourseDataManager.loadFromPreferences(context).then((prefData: CourseData[]) => {
+      if (prefData.length > 0) {
+        this.allCourses = prefData;
+        this.updateTodayCourses(prefData);
+      } else {
+        this.allCourses = [];
+        this.todayCourses = [];
+      }
+    }).catch(() => {
+      this.allCourses = [];
+      this.todayCourses = [];
+    });
+    // While waiting for Preferences, keep current state
+  }
+
+  private updateTodayCourses(courses: CourseData[]): void {
+    const today: number = new Date().getDay();
+    const dayMap: number[] = [0, 1, 2, 3, 4, 5, 6];
+    const todayDay: number = dayMap[today];
+    const todayList: CourseItem[] = [];
+    for (const item of courses) {
+      if (item.dayOfWeek === todayDay) {
+        todayList.push({
+          id: item.id,
+          courseName: item.courseName,
+          teacher: item.teacher,
+          location: item.location,
+          timeSlot: item.timeSlot,
+          startTime: '',
+          endTime: '',
+          dayOfWeek: item.dayOfWeek,
+          weeks: item.weeks
+        } as CourseItem);
+      }
+    }
+    this.todayCourses = todayList;
+  }
+
+  private loadLibraryFavorites(): void {
+    const saved: Object | undefined = AppStorage.get('library_favorites');
+    if (saved) {
+      try {
+        this.libraryFavorites = JSON.parse(saved as string) as string[];
+        return;
+      } catch (err) {
+        LogUtils.error(TAG, '解析收藏数据失败', err);
+      }
+    }
+    this.libraryFavorites = [];
+  }
+
+  private saveLibraryFavorites(): void {
+    try {
+      AppStorage.setOrCreate('library_favorites', JSON.stringify(this.libraryFavorites));
+      const context: common.Context = getContext(this);
+      PreferencesUtil.setCustom(context, 'library_favorites', JSON.stringify(this.libraryFavorites));
+    } catch (err) {
+      LogUtils.error(TAG, '保存收藏数据失败', err);
+    }
+  }
+
+  private toggleFavorite(bookEntry: string): void {
+    const index: number = this.libraryFavorites.indexOf(bookEntry);
+    if (index !== -1) {
+      this.libraryFavorites.splice(index, 1);
+      this.libraryFavorites = [...this.libraryFavorites];
+    } else {
+      this.libraryFavorites = [...this.libraryFavorites, bookEntry];
+    }
+    this.saveLibraryFavorites();
+  }
+
   getFilteredNews(): CampusNewsItem[] {
     if (this.activeCategory === 0) {
       return this.announcements;
@@ -105,6 +234,21 @@ export struct Main {
     return this.campusNewsList.filter((item: CampusNewsItem) => {
       return item.category === this.categoryList[this.activeCategory];
     });
+  }
+
+  /** 根据字体大小级别返回缩放后的标题字号 */
+  titleSize(): number {
+    return this.fontSizeLevel === 0 ? 28 : this.fontSizeLevel === 2 ? 36 : 32;
+  }
+
+  /** 根据字体大小级别返回缩放后的正文字号 */
+  bodySize(): number {
+    return this.fontSizeLevel === 0 ? 24 : this.fontSizeLevel === 2 ? 30 : 26;
+  }
+
+  /** 根据字体大小级别返回缩放后的辅助字号 */
+  captionSize(): number {
+    return this.fontSizeLevel === 0 ? 20 : this.fontSizeLevel === 2 ? 26 : 22;
   }
 
   @Builder
@@ -250,7 +394,7 @@ export struct Main {
               // Navigation bar
               Row() {
                 Text('校园助手')
-                  .fontSize($r('app.float.text_size_title_large'))
+                  .fontSize(this.fontSizeLevel === 2 ? 36 : this.fontSizeLevel === 0 ? 28 : 32)
                   .fontWeight(600)
                   .fontColor($r('app.color.brand_primary'))
                 Blank()
@@ -294,7 +438,7 @@ export struct Main {
               .width('100%')
               .height(44)
               .borderRadius(24)
-              .backgroundColor(Color.White)
+              .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
               .padding({ left: 16, right: 16 })
               .margin({
                 left: $r('app.float.spacing_lg'),
@@ -370,14 +514,14 @@ export struct Main {
                           .fontColor([$r('app.color.text_secondary')])
                       }
                       Text('更多功能')
-                        .fontSize($r('app.float.text_size_caption'))
+                        .fontSize(this.captionSize())
                         .fontColor($r('app.color.text_secondary'))
                         .margin({ left: 8 })
                     }
                     .width('100%')
                     .height(48)
                     .borderRadius($r('app.float.radius_md'))
-                    .backgroundColor(Color.White)
+                    .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                     .padding({ left: $r('app.float.spacing_px') })
                     .shadow({
                       radius: 8,
@@ -393,12 +537,12 @@ export struct Main {
                   Column() {
                     Row() {
                       Text('校园公告')
-                        .fontSize($r('app.float.text_size_title_medium'))
+                        .fontSize(this.titleSize())
                         .fontWeight(600)
                         .fontColor($r('app.color.brand_primary'))
                       Blank()
                       Text('更多')
-                        .fontSize($r('app.float.text_size_caption'))
+                        .fontSize(this.captionSize())
                         .fontColor($r('app.color.brand_primary'))
                       SymbolGlyph($r('sys.symbol.chevron_right'))
                         .fontSize(20)
@@ -455,7 +599,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .padding($r('app.float.spacing_px'))
                   .margin({ bottom: $r('app.float.spacing_px') })
                   .shadow({
@@ -472,7 +616,7 @@ export struct Main {
                   Column() {
                     Row() {
                       Text('今日课程')
-                        .fontSize($r('app.float.text_size_title_medium'))
+                        .fontSize(this.titleSize())
                         .fontWeight(600)
                         .fontColor($r('app.color.brand_primary'))
                       Blank()
@@ -483,6 +627,20 @@ export struct Main {
                     if (this.todayCourses.length > 0) {
                       ForEach(this.todayCourses, (course: CourseItem) => {
                         Row() {
+                          // Day badge
+                          Column() {
+                            Text(this.getDayLabel(course.dayOfWeek))
+                              .fontSize(11)
+                              .fontColor(Color.White)
+                              .fontWeight(600)
+                          }
+                          .width(56)
+                          .height(28)
+                          .backgroundColor($r('app.color.brand_primary'))
+                          .borderRadius(14)
+                          .alignItems(HorizontalAlign.Center)
+                          .justifyContent(FlexAlign.Center)
+
                           // Time pill
                           Column() {
                             Text(course.timeSlot)
@@ -494,6 +652,7 @@ export struct Main {
                           .height(28)
                           .backgroundColor($r('app.color.accent_orange'))
                           .borderRadius(14)
+                          .margin({ left: 6 })
                           .alignItems(HorizontalAlign.Center)
                           .justifyContent(FlexAlign.Center)
 
@@ -531,7 +690,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .padding($r('app.float.spacing_px'))
                   .margin({ bottom: $r('app.float.spacing_px') })
                   .shadow({
@@ -603,7 +762,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .padding($r('app.float.spacing_px'))
                   .shadow({
                     radius: 8,
@@ -634,7 +793,7 @@ export struct Main {
               // Title bar
               Row() {
                 Text('校园信息')
-                  .fontSize($r('app.float.text_size_title_large'))
+                  .fontSize(this.titleSize())
                   .fontWeight(600)
                   .fontColor($r('app.color.text_primary'))
                 Blank()
@@ -776,7 +935,7 @@ export struct Main {
                         }
                         .width('100%')
                         .borderRadius($r('app.float.radius_md'))
-                        .backgroundColor(Color.White)
+                        .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                         .padding($r('app.float.spacing_px'))
                         .margin({ bottom: $r('app.float.spacing_px') })
                         .shadow({
@@ -837,7 +996,7 @@ export struct Main {
             .constraintSize({ minHeight: '100%', maxHeight: '100%' })
             .padding({ bottom: 56 })
             .width('100%')
-            .backgroundColor($r('app.color.bg_global'))
+            .backgroundColor(this.darkModeEnabled ? '#16162A' : '#F5F7FA')
           }
           .tabBar(this.Tab1)
 
@@ -847,7 +1006,7 @@ export struct Main {
               // Title bar
               Row() {
                 Text('学习助手')
-                  .fontSize($r('app.float.text_size_title_large'))
+                  .fontSize(this.titleSize())
                   .fontWeight(600)
                   .fontColor($r('app.color.text_primary'))
                 Blank()
@@ -864,7 +1023,7 @@ export struct Main {
                 ForEach(this.studyTabList, (tab: string, index: number) => {
                   Column() {
                     Text(tab)
-                      .fontSize($r('app.float.text_size_body'))
+                      .fontSize(this.bodySize())
                       .fontColor(this.activeStudyTab === index
                         ? $r('app.color.brand_primary')
                         : $r('app.color.text_secondary'))
@@ -897,8 +1056,8 @@ export struct Main {
                 top: $r('app.float.spacing_px'),
                 bottom: 0
               })
-              .backgroundColor(Color.White)
-              .backgroundColor(Color.White)
+              .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
+              .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
               .borderRadius({ topLeft: $r('app.float.radius_md'), topRight: $r('app.float.radius_md') })
 
               // Scroll 内容区（layoutWeight 填满剩余空间）
@@ -906,7 +1065,12 @@ export struct Main {
                 Column() {
                   if (this.activeStudyTab === 0) {
                     // ===== 课程表 =====
-                    this.buildScheduleView()
+                    CourseScheduleView({
+                      allCourses: this.allCourses,
+                      currentWeek: $currentWeek,
+                      coursesVersion: this.coursesVersion,
+                      navPathStack: this.navPathStack
+                    })
                   } else if (this.activeStudyTab === 1) {
                     // ===== 成绩查询 =====
                     this.buildGradeView()
@@ -927,7 +1091,7 @@ export struct Main {
               }
               .width('100%')
               .layoutWeight(1)
-              .backgroundColor(Color.White)
+              .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
               .borderRadius({
                 bottomLeft: $r('app.float.radius_md'),
                 bottomRight: $r('app.float.radius_md')
@@ -935,7 +1099,7 @@ export struct Main {
             }
             .constraintSize({ minHeight: '100%', maxHeight: '100%' })
             .width('100%')
-            .backgroundColor($r('app.color.bg_global'))
+            .backgroundColor(this.darkModeEnabled ? '#16162A' : '#F5F7FA')
           }
           .tabBar(this.Tab2)
 
@@ -945,7 +1109,7 @@ export struct Main {
               // Title bar
               Row() {
                 Text('生活服务')
-                  .fontSize($r('app.float.text_size_title_large'))
+                  .fontSize(this.titleSize())
                   .fontWeight(600)
                   .fontColor($r('app.color.text_primary'))
                 Blank()
@@ -987,7 +1151,7 @@ export struct Main {
             .constraintSize({ minHeight: '100%', maxHeight: '100%' })
             .padding({ bottom: 56 })
             .width('100%')
-            .backgroundColor($r('app.color.bg_global'))
+            .backgroundColor(this.darkModeEnabled ? '#16162A' : '#F5F7FA')
           }
           .tabBar(this.Tab3)
 
@@ -997,7 +1161,7 @@ export struct Main {
               // Title bar
               Row() {
                 Text('我的')
-                  .fontSize($r('app.float.text_size_title_large'))
+                  .fontSize(this.titleSize())
                   .fontWeight(600)
                   .fontColor($r('app.color.text_primary'))
                 Blank()
@@ -1058,7 +1222,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .padding($r('app.float.spacing_px'))
                   .shadow({
                     radius: 8,
@@ -1089,7 +1253,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .padding({ left: 4, right: 4 })
                   .shadow({
                     radius: 8,
@@ -1107,13 +1271,15 @@ export struct Main {
                         .fontSize(22)
                         .fontColor([$r('app.color.brand_primary')])
                       Text('深色模式')
-                        .fontSize($r('app.float.text_size_body'))
-                        .fontColor($r('app.color.text_primary'))
+                        .fontSize(this.bodySize())
+                        .fontColor(this.darkModeEnabled ? '#e0e0f0' : '#1D2129')
                         .margin({ left: $r('app.float.spacing_px') })
                       Blank()
                       Toggle({ type: ToggleType.Switch, isOn: this.darkModeEnabled })
                         .onChange((isOn: boolean) => {
                           this.darkModeEnabled = isOn;
+                          const context: common.Context = getContext(this);
+                          PreferencesUtil.setCustom(context, 'darkModeEnabled', isOn ? 'true' : 'false');
                         })
                     }
                     .width('100%')
@@ -1128,8 +1294,8 @@ export struct Main {
                         .fontSize(22)
                         .fontColor([$r('app.color.brand_primary')])
                       Text('字体大小')
-                        .fontSize($r('app.float.text_size_body'))
-                        .fontColor($r('app.color.text_primary'))
+                        .fontSize(this.bodySize())
+                        .fontColor(this.darkModeEnabled ? '#e0e0f0' : '#1D2129')
                         .margin({ left: $r('app.float.spacing_px') })
                       Blank()
                       Row() {
@@ -1139,21 +1305,33 @@ export struct Main {
                           .margin({ right: 8 })
                         Radio({ value: 'small', group: 'fontSize' })
                           .checked(this.fontSizeLevel === 0)
-                          .onChange(() => { this.fontSizeLevel = 0; })
+                          .onChange(() => {
+                            this.fontSizeLevel = 0;
+                            const context: common.Context = getContext(this);
+                            PreferencesUtil.setCustom(context, 'fontSizeLevel', '0');
+                          })
                         Text('中')
                           .fontSize($r('app.float.text_size_caption'))
                           .fontColor($r('app.color.text_secondary'))
                           .margin({ left: 12, right: 8 })
                         Radio({ value: 'medium', group: 'fontSize' })
                           .checked(this.fontSizeLevel === 1)
-                          .onChange(() => { this.fontSizeLevel = 1; })
+                          .onChange(() => {
+                            this.fontSizeLevel = 1;
+                            const context: common.Context = getContext(this);
+                            PreferencesUtil.setCustom(context, 'fontSizeLevel', '1');
+                          })
                         Text('大')
                           .fontSize($r('app.float.text_size_caption'))
                           .fontColor($r('app.color.text_secondary'))
                           .margin({ left: 12, right: 8 })
                         Radio({ value: 'large', group: 'fontSize' })
                           .checked(this.fontSizeLevel === 2)
-                          .onChange(() => { this.fontSizeLevel = 2; })
+                          .onChange(() => {
+                            this.fontSizeLevel = 2;
+                            const context: common.Context = getContext(this);
+                            PreferencesUtil.setCustom(context, 'fontSizeLevel', '2');
+                          })
                       }
                     }
                     .width('100%')
@@ -1168,8 +1346,8 @@ export struct Main {
                         .fontSize(22)
                         .fontColor([$r('app.color.brand_primary')])
                       Text('通知设置')
-                        .fontSize($r('app.float.text_size_body'))
-                        .fontColor($r('app.color.text_primary'))
+                        .fontSize(this.bodySize())
+                        .fontColor(this.darkModeEnabled ? '#e0e0f0' : '#1D2129')
                         .margin({ left: $r('app.float.spacing_px') })
                       Blank()
                       SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -1191,7 +1369,7 @@ export struct Main {
                         .fontSize(22)
                         .fontColor([$r('app.color.brand_primary')])
                       Text('清理缓存')
-                        .fontSize($r('app.float.text_size_body'))
+                        .fontSize(this.bodySize())
                         .fontColor($r('app.color.text_primary'))
                         .margin({ left: $r('app.float.spacing_px') })
                       Blank()
@@ -1215,7 +1393,7 @@ export struct Main {
                   }
                   .width('100%')
                   .borderRadius($r('app.float.radius_md'))
-                  .backgroundColor(Color.White)
+                  .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : '#ffffff')
                   .shadow({
                     radius: 8,
                     color: 'rgba(0, 0, 0, 0.05)',
@@ -1228,7 +1406,7 @@ export struct Main {
                   Column() {
                     Text('版本号 V1.0.0（HarmonyOS NEXT）')
                       .fontSize($r('app.float.text_size_caption'))
-                      .fontColor($r('app.color.text_secondary'))
+                      .fontColor(this.darkModeEnabled ? '#a0a0b8' : '#86909C')
                     Text('福州理工学院 计算机学院 开发团队')
                       .fontSize(22)
                       .fontColor($r('app.color.text_secondary'))
@@ -1254,7 +1432,7 @@ export struct Main {
             .constraintSize({ minHeight: '100%', maxHeight: '100%' })
             .padding({ bottom: 56 })
             .width('100%')
-            .backgroundColor($r('app.color.bg_global'))
+            .backgroundColor(this.darkModeEnabled ? '#16162A' : '#F5F7FA')
           }
           .tabBar(this.Tab4)
         }
@@ -1265,11 +1443,11 @@ export struct Main {
         })
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor($r('app.color.bg_global'))
+        .backgroundColor(this.darkModeEnabled ? '#1A1A2E' : '#F5F7FA')
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.bg_global'))
+      .backgroundColor(this.darkModeEnabled ? '#1A1A2E' : '#F5F7FA')
     }
     .hideBackButton(true)
     .onReady((ctx: NavDestinationContext) => {
@@ -1293,8 +1471,8 @@ export struct Main {
       .animation({ duration: 200, curve: Curve.FastOutSlowIn })
 
       Text(item.label)
-        .fontSize($r('app.float.text_size_caption'))
-        .fontColor($r('app.color.text_primary'))
+        .fontSize(this.captionSize())
+        .fontColor(this.darkModeEnabled ? '#c0c0d8' : '#1D2129')
         .margin({ top: 6 })
     }
     .alignItems(HorizontalAlign.Center)
@@ -1305,6 +1483,32 @@ export struct Main {
           this.pressedEntryIndex = -1;
         }
       }, 200);
+      // 导航到对应页面或切换Tab
+      const route: string = item.routeName;
+      if (route === 'Schedule') {
+        this.selectedTab = 2;
+        this.activeStudyTab = 0;
+      } else if (route === 'GradeQuery') {
+        this.selectedTab = 2;
+        this.activeStudyTab = 1;
+      } else if (route === 'Library') {
+        this.selectedTab = 2;
+        this.activeStudyTab = 2;
+      } else if (route === 'CampusNotice') {
+        this.selectedTab = 1;
+        this.activeCategory = 0;
+      } else if (route === 'CampusMap') {
+        this.selectedTab = 1;
+        this.activeCategory = 4;
+      } else if (route === 'TodoReminder') {
+        this.navPathStack.pushPathByName('TodoPage', null);
+      } else if (route === 'LostFound') {
+        this.navPathStack.pushPathByName('LostFound', null);
+      } else if (route === 'CampusFood') {
+        this.navPathStack.pushPathByName('CampusFood', null);
+      } else if (route === 'MusicPlayer') {
+        this.navPathStack.pushPathByName('MusicPlayer', null);
+      }
     })
   }
 
@@ -1315,20 +1519,36 @@ export struct Main {
         .fontSize(22)
         .fontColor([$r('app.color.brand_primary')])
       Text(label)
-        .fontSize($r('app.float.text_size_body'))
-        .fontColor($r('app.color.text_primary'))
+        .fontSize(this.bodySize())
+        .fontColor(this.darkModeEnabled ? '#e0e0f0' : '#1D2129')
         .margin({ left: $r('app.float.spacing_px') })
       Blank()
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(20)
-        .fontColor([$r('app.color.text_secondary')])
+        .fontColor([this.darkModeEnabled ? '#6a6a8e' : '#86909C'])
     }
     .width('100%')
     .height(52)
     .padding({ left: $r('app.float.spacing_px'), right: $r('app.float.spacing_px') })
     .borderRadius(8)
     .onClick(() => {
-      LogUtils.info('Main', '点击功能: ' + label);
+      if (label === '我的待办') {
+        this.navPathStack.pushPathByName('TodoPage', null);
+      } else if (label === '我的收藏') {
+        this.navPathStack.pushPathByName('MineFavorites', null);
+      } else if (label === '我的课程') {
+        this.selectedTab = 2;
+        this.activeStudyTab = 0;
+      } else if (label === '我的成绩') {
+        this.selectedTab = 2;
+        this.activeStudyTab = 1;
+      } else if (label === '失物发布') {
+        this.navPathStack.pushPathByName('LostFound', null);
+      } else if (label === '我的设置') {
+        LogUtils.info('Main', '点击设置');
+      } else {
+        LogUtils.info('Main', '点击功能: ' + label);
+      }
     })
   }
 
@@ -1337,106 +1557,12 @@ export struct Main {
     Row()
       .width('100%')
       .height(0.5)
-      .backgroundColor($r('app.color.border_light'))
+      .backgroundColor(this.darkModeEnabled ? '#2a2a4a' : '#E5E6EB')
       .margin({ left: $r('app.float.spacing_px'), right: $r('app.float.spacing_px') })
   }
 
-  // ==================== Tab 2: 学习助手 Builder ====================
-
-  getWeekCourses(): CourseItem[] {
-    return getCoursesForWeek(this.currentWeek);
-  }
-
-  @Builder
-  buildScheduleView() {
-    Column() {
-      // Week selector
-      Row() {
-        Text('〈')
-          .fontSize($r('app.float.text_size_body'))
-          .fontColor($r('app.color.brand_primary'))
-          .onClick(() => {
-            if (this.currentWeek > 1) {
-              this.currentWeek--;
-            }
-          })
-
-        Blank()
-
-        Text('2025-2026 第' + this.currentWeek + '周')
-          .fontSize($r('app.float.text_size_body'))
-          .fontColor($r('app.color.text_primary'))
-          .fontWeight(500)
-
-        Blank()
-
-        Text('〉')
-          .fontSize($r('app.float.text_size_body'))
-          .fontColor($r('app.color.brand_primary'))
-          .onClick(() => {
-            if (this.currentWeek < 20) {
-              this.currentWeek++;
-            }
-          })
-      }
-      .width('100%')
-      .height(44)
-      .padding({ left: $r('app.float.spacing_px'), right: $r('app.float.spacing_px') })
-      .margin({ top: $r('app.float.spacing_px'), bottom: $r('app.float.spacing_px') })
-
-      // Course cards for current week
-      ForEach(this.getWeekCourses(), (course: CourseItem) => {
-        Row() {
-          Column() {
-            Text(course.timeSlot)
-              .fontSize($r('app.float.text_size_caption'))
-              .fontColor(Color.White)
-              .fontWeight(500)
-          }
-          .width(56)
-          .height(28)
-          .backgroundColor($r('app.color.accent_orange'))
-          .borderRadius(14)
-          .alignItems(HorizontalAlign.Center)
-          .justifyContent(FlexAlign.Center)
-
-          Column() {
-            Text(course.courseName)
-              .fontSize($r('app.float.text_size_body'))
-              .fontColor($r('app.color.text_primary'))
-              .fontWeight(500)
-            Text(course.location + ' | ' + course.teacher)
-              .fontSize($r('app.float.text_size_caption'))
-              .fontColor($r('app.color.text_secondary'))
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          .margin({ left: $r('app.float.spacing_px') })
-        }
-        .width('100%')
-        .padding($r('app.float.spacing_px'))
-        .borderRadius(8)
-        .backgroundColor('rgba(22, 119, 255, 0.03)')
-        .margin({ bottom: 8 })
-      }, (course: CourseItem) => course.id.toString())
-
-      // Edit schedule button
-      Button('编辑课程表')
-        .width('100%')
-        .height(40)
-        .fontSize($r('app.float.text_size_body'))
-        .fontColor($r('app.color.brand_primary'))
-        .backgroundColor(Color.White)
-        .borderRadius($r('app.float.radius_md'))
-        .border({ width: 1, color: $r('app.color.brand_primary') })
-        .margin({ top: $r('app.float.spacing_px') })
-        .onClick(() => {
-          LogUtils.info('Main', '编辑课程表');
-        })
-    }
-    .width('100%')
-    .margin({ top: $r('app.float.spacing_px') })
+  getDayLabel(day: number): string {
+    return CourseDataManager.getDayLabel(day);
   }
 
   @Builder
@@ -1602,21 +1728,30 @@ export struct Main {
           .alignItems(HorizontalAlign.Start)
           .margin({ left: $r('app.float.spacing_px') })
 
-          Button('收藏')
+          Button(this.libraryFavorites.indexOf(item) !== -1 ? '已收藏' : '收藏')
             .height(30)
             .fontSize($r('app.float.text_size_caption'))
-            .fontColor($r('app.color.accent_orange'))
-            .backgroundColor(Color.White)
-            .border({ width: 1, color: $r('app.color.accent_orange') })
+            .fontColor(this.libraryFavorites.indexOf(item) !== -1
+              ? Color.White
+              : $r('app.color.accent_orange'))
+            .backgroundColor(this.libraryFavorites.indexOf(item) !== -1
+              ? $r('app.color.brand_primary')
+              : (this.darkModeEnabled ? '#1e1e3a' : Color.White))
+            .border({
+              width: 1,
+              color: this.libraryFavorites.indexOf(item) !== -1
+                ? $r('app.color.brand_primary')
+                : $r('app.color.accent_orange')
+            })
             .borderRadius($r('app.float.radius_md'))
             .onClick(() => {
-              LogUtils.info('Main', '收藏图书');
+              this.toggleFavorite(item);
             })
         }
         .width('100%')
         .padding($r('app.float.spacing_px'))
         .borderRadius($r('app.float.radius_md'))
-        .backgroundColor(Color.White)
+        .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
         .shadow({
           radius: 4,
           color: 'rgba(0, 0, 0, 0.03)',
@@ -1665,8 +1800,8 @@ export struct Main {
         .fontSize(28)
         .fontColor([$r('app.color.brand_primary')])
       Text(label)
-        .fontSize($r('app.float.text_size_body'))
-        .fontColor($r('app.color.text_primary'))
+        .fontSize(this.bodySize())
+        .fontColor(this.darkModeEnabled ? '#c0c0d8' : '#1D2129')
         .margin({ left: $r('app.float.spacing_px') })
       Blank()
       SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -1676,7 +1811,7 @@ export struct Main {
     .width('48%')
     .height(60)
     .borderRadius($r('app.float.radius_md'))
-    .backgroundColor(Color.White)
+    .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
     .padding({ left: $r('app.float.spacing_px'), right: $r('app.float.spacing_px') })
     .shadow({
       radius: 4,
@@ -1696,15 +1831,15 @@ export struct Main {
         .fontSize(36)
         .fontColor([color])
       Text(label)
-        .fontSize($r('app.float.text_size_body'))
-        .fontColor($r('app.color.text_primary'))
+        .fontSize(this.bodySize())
+        .fontColor(this.darkModeEnabled ? '#c0c0d8' : '#1D2129')
         .fontWeight(500)
         .margin({ top: $r('app.float.spacing_px') })
     }
     .width('49%')
     .height(120)
     .borderRadius($r('app.float.radius_md'))
-    .backgroundColor(Color.White)
+    .backgroundColor(this.darkModeEnabled ? '#1e1e3a' : Color.White)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .shadow({
@@ -1715,6 +1850,15 @@ export struct Main {
     })
     .onClick(() => {
       LogUtils.info('Main', '点击服务: ' + label);
+      if (label === '失物招领') {
+        this.navPathStack.pushPathByName('LostFound', null);
+      } else if (label === '校园美食') {
+        this.navPathStack.pushPathByName('CampusFood', null);
+      } else if (label === '音乐播放') {
+        this.navPathStack.pushPathByName('MusicPlayer', null);
+      } else if (label === '校园工具') {
+        this.navPathStack.pushPathByName('CampusTools', null);
+      }
     })
   }
 }

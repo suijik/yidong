@@ -19,6 +19,36 @@
       "name": "Main",
       "pageSourceFile": "src/main/ets/pages/main/main.ets",
       "buildFunction": "MainBuilder"
+    },
+    {
+      "name": "TodoPage",
+      "pageSourceFile": "src/main/ets/pages/Todo/TodoPage.ets",
+      "buildFunction": "TodoPageBuilder"
+    },
+    {
+      "name": "LostFound",
+      "pageSourceFile": "src/main/ets/pages/LostFound/LostFound.ets",
+      "buildFunction": "LostFoundBuilder"
+    },
+    {
+      "name": "CampusFood",
+      "pageSourceFile": "src/main/ets/pages/CampusFood/CampusFood.ets",
+      "buildFunction": "CampusFoodBuilder"
+    },
+    {
+      "name": "MusicPlayer",
+      "pageSourceFile": "src/main/ets/pages/MusicPlayer/MusicPlayer.ets",
+      "buildFunction": "MusicPlayerBuilder"
+    },
+    {
+      "name": "CampusTools",
+      "pageSourceFile": "src/main/ets/pages/CampusTools/CampusTools.ets",
+      "buildFunction": "CampusToolsBuilder"
+    },
+    {
+      "name": "MineFavorites",
+      "pageSourceFile": "src/main/ets/pages/Mine/MineFavorites.ets",
+      "buildFunction": "MineFavoritesBuilder"
     }
   ]
 }

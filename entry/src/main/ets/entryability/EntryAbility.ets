@@ -1,6 +1,8 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { NotificationUtil } from '../common/utils/NotificationUtil';
+import { FloatingWindowUtil } from '../common/utils/FloatingWindowUtil';
 
 const DOMAIN = 0x0000;
 
@@ -15,6 +17,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    // 销毁悬浮窗
+    FloatingWindowUtil.getInstance().destroy();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -40,6 +44,20 @@ export default class EntryAbility extends UIAbility {
       }).catch((err: Error) => {
         hilog.error(DOMAIN, 'testTag', 'Failed to get main window. Cause: %{public}s', JSON.stringify(err));
       });
+
+      // 初始化通知模块
+      try {
+        NotificationUtil.init(this.context);
+      } catch (e) {
+        hilog.error(DOMAIN, 'testTag', 'Failed to init notification. Cause: %{public}s', JSON.stringify(e));
+      }
+
+      // 初始化悬浮窗工具
+      try {
+        FloatingWindowUtil.getInstance().init(this.context);
+      } catch (e) {
+        hilog.error(DOMAIN, 'testTag', 'Failed to init floating window. Cause: %{public}s', JSON.stringify(e));
+      }
     });
   }
 

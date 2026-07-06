@@ -17,6 +17,7 @@ export struct Start {
   private progressTimer: number = -1;
   private countdownTimer: number = -1;
   private hasNavigated: boolean = false;
+  private isFirstLaunch: boolean = true;
 
   @StorageProp('topRectHeight') topRectHeight: number = 0;
   @StorageProp('bottomRectHeight') bottomRectHeight: number = 0;
@@ -102,7 +103,6 @@ export struct Start {
   }
 
   private async checkAndNavigate(): Promise<void> {
-    /*
     try {
       // 获取偏好存储
       const hostContext = this.getUIContext().getHostContext();
@@ -114,23 +114,22 @@ export struct Start {
       LogUtils.info(TAG, '获取存储成功')
       const dataPreferences = await preferences.getPreferences(hostContext, 'app_preferences');
       // 获取是否首次启动，默认为 true
-      const isFirstLaunch = await dataPreferences.get('isFirstLaunch', true);
+      this.isFirstLaunch = (await dataPreferences.get('isFirstLaunch', true)) as boolean;
 
-      if (true) {
+      if (this.isFirstLaunch) {
         // 首次启动：设置为 false，然后跳转引导页
         await dataPreferences.put('isFirstLaunch', false);
         await dataPreferences.flush();
         this.navigateToGuidePage();
       } else {
-        // 非首次启动：直接跳转首页
+        // 非首次启动：直接跳转登录页
         this.navigateToLoginPage();
       }
     } catch (err) {
-      LogUtils.error(TAG, '沉浸式窗口设置失败', err);
-      // 出错时默认跳转首页
+      LogUtils.error(TAG, '检查启动状态失败', err);
+      // 出错时默认跳转登录页
       this.navigateToLoginPage();
-    }*/
-    this.navigateToMainPage();
+    }
   }
 
   private skipSplash(): void {
@@ -139,7 +138,11 @@ export struct Start {
     }
     this.hasNavigated = true;
     this.clearTimers();
-    this.navigateToMainPage();
+    if (this.isFirstLaunch) {
+      this.navigateToGuidePage();
+    } else {
+      this.navigateToLoginPage();
+    }
   }
 
   private navigateToMainPage(): void {
